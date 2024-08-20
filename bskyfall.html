@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluesky Hashtag Stream</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.3.4/axios.min.js"></script>
+    <style>
+        :root {
+            --background-color: #15202b;
+            --text-color: #ffffff;
+            --border-color: #38444d;
+            --primary-color: #1da1f2;
+            --secondary-color: #192734;
+            --input-background: #253341;
+            --error-color: #ff6b6b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+
+        input[type="text"], input[type="password"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 16px;
+            background-color: var(--input-background);
+            color: var(--text-color);
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 9999px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #1991db;
+        }
+
+        .error {
+            color: var(--error-color);
+            margin-top: 10px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #posts {
+            margin-top: 20px;
+        }
+
+        .post {
+            border-bottom: 1px solid var(--border-color);
+            padding: 15px 0;
+            display: flex;
+        }
+
+        .post-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            margin-right: 12px;
+        }
+
+        .post-content-wrapper {
+            flex-grow: 1;
+        }
+
+        .post-author {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: var(--primary-color);
+        }
+
+        .post-metadata {
+            color: #8899a6;
+            font-size: 0.9em;
+            margin-left: 5px;
+        }
+
+        .post-handle, .post-timestamp {
+            color: #8899a6;
+        }
+
+        .post-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .post-content a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        .post-content a:hover {
+            text-decoration: underline;
+        }
+
+        .logout-button {
+            background-color: var(--secondary-color);
+            color: var(--text-color);
+            margin-left: 10px;
+        }
+
+        .logout-button:hover {
+            background-color: #22303c;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        #hashtags {
+            flex-grow: 1;
+        }
+
+        #refreshRate {
+            width: 60px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 24px;
+            margin: 0 10px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--secondary-color);
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(36px);
+        }
+
+        .post-media {
+            margin-top: 10px;
+            max-width: 100%;
+            border-radius: 8px;
+        }
+
+        .post-media img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+
+        .post-alt-text {
+            font-size: 0.9em;
+            color: #8899a6;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loginScreen">
+            <h1>Login to Bluesky</h1>
+            <input type="text" id="loginIdentifier" placeholder="Bluesky Handle (e.g., user.bsky.social)">
+            <input type="password" id="loginPassword" placeholder="App Password">
+            <button onclick="login()">Login</button>
+            <div id="loginError" class="error"></div>
+        </div>
+
+        <div id="mainScreen" class="hidden">
+            <h1>Bluesky Hashtag Stream</h1>
+            <div class="input-group">
+                <input type="text" id="hashtags" placeholder="Enter hashtags (comma-separated)">
+                <div class="toggle-container">
+                    Any <label class="toggle-switch">
+                        <input type="checkbox" id="hashtagToggle">
+                        <span class="slider"></span>
+                    </label> All
+                </div>
+                <input type="number" id="refreshRate" value="30" min="5" placeholder="Refresh rate (s)">
+                <button onclick="startStream()">GO</button>
+            </div>
+            <button onclick="logout()" class="logout-button">Logout</button>
+            <div id="error" class="error"></div>
+            <div id="posts"></div>
+        </div>
+    </div>
+
+    <script>
+		document.addEventListener('DOMContentLoaded', function() {
+			let intervalId;
+			let accessToken = null;
+			const BLUESKY_API_URL = 'https://bsky.social/xrpc';
+
+			window.onerror = function(message, source, lineno, colno, error) {
+				console.error('Global error:', message, 'at', source, lineno, colno);
+				alert('An error occurred. Please check the console for more details.');
+				return true;
+			};
+
+			async function getAccessToken(identifier, password) {
+				try {
+					const response = await axios.post(`${BLUESKY_API_URL}/com.atproto.server.createSession`, {
+						identifier,
+						password
+					});
+					return response.data.accessJwt;
+				} catch (error) {
+					console.error('Authentication error:', error);
+					throw new Error(`Authentication failed: ${error.response?.data?.message || error.message}`);
+				}
+			}
+
+			async function searchPosts(hashtags, matchAll) {
+				try {
+					let query;
+					const formattedHashtags = hashtags.map(tag => tag.startsWith('#') ? tag.slice(1) : tag);
+					if (matchAll) {
+						query = formattedHashtags.map(tag => `#${tag}`).join(' ');
+					} else {
+						query = `(${formattedHashtags.map(tag => `#${tag}`).join(' OR ')})`;
+					}
+					console.log('Search query:', query); // For debugging
+					const response = await axios.get(`${BLUESKY_API_URL}/app.bsky.feed.searchPosts`, {
+						params: { q: query },
+						headers: { Authorization: `Bearer ${accessToken}` }
+					});
+					return response.data.posts;
+				} catch (error) {
+					console.error('Search posts error:', error);
+					throw new Error(`Failed to fetch posts: ${error.response?.data?.message || error.message}`);
+				}
+			}
+
+			function createLinkElement(url) {
+				const link = document.createElement('a');
+				link.href = url;
+				link.textContent = url;
+				link.target = '_blank';
+				link.rel = 'noopener noreferrer';
+				return link;
+			}
+
+			function linkifyText(text) {
+				const urlRegex = /(https?:\/\/[^\s]+)/g;
+				const fragment = document.createDocumentFragment();
+				let lastIndex = 0;
+				text.replace(urlRegex, (url, index) => {
+					fragment.append(document.createTextNode(text.slice(lastIndex, index)));
+					fragment.append(createLinkElement(url));
+					lastIndex = index + url.length;
+					return url;
+				});
+				fragment.append(document.createTextNode(text.slice(lastIndex)));
+				return fragment;
+			}
+
+			function formatDate(dateString) {
+				const date = new Date(dateString);
+				return date.toLocaleString('en-US', { 
+					year: 'numeric', 
+					month: 'short', 
+					day: 'numeric', 
+					hour: '2-digit', 
+					minute: '2-digit'
+				});
+			}
+
+			function displayPosts(posts) {
+				const postsContainer = document.getElementById('posts');
+				postsContainer.innerHTML = '';
+				if (posts.length === 0) {
+					postsContainer.innerHTML = '<p>No posts found for this hashtag.</p>';
+					return;
+				}
+				posts.forEach(post => {
+					if (post.record && !post.record.deleted) {
+						const postElement = document.createElement('div');
+						postElement.className = 'post';
+						
+						const avatarImg = document.createElement('img');
+						avatarImg.className = 'post-avatar';
+						avatarImg.src = post.author.avatar || '/api/placeholder/48/48';
+						avatarImg.alt = `${post.author.displayName}'s avatar`;
+						postElement.appendChild(avatarImg);
+
+						const contentWrapper = document.createElement('div');
+						contentWrapper.className = 'post-content-wrapper';
+
+						const authorDiv = document.createElement('div');
+						authorDiv.className = 'post-author';
+						authorDiv.innerHTML = `
+							${post.author.displayName}
+							<span class="post-metadata">
+								<span class="post-handle">@${post.author.handle}</span>
+								· <span class="post-timestamp">${formatDate(post.indexedAt)}</span>
+							</span>
+						`;
+						contentWrapper.appendChild(authorDiv);
+
+						const contentDiv = document.createElement('div');
+						contentDiv.className = 'post-content';
+						contentDiv.appendChild(linkifyText(post.record.text));
+						contentWrapper.appendChild(contentDiv);
+
+						if (post.embed && post.embed.images) {
+							post.embed.images.forEach(img => {
+								const mediaDiv = document.createElement('div');
+								mediaDiv.className = 'post-media';
+								const imgElement = document.createElement('img');
+								imgElement.src = img.fullsize;
+								imgElement.alt = img.alt || 'Post image';
+								mediaDiv.appendChild(imgElement);
+								if (img.alt) {
+									const altTextDiv = document.createElement('div');
+									altTextDiv.className = 'post-alt-text';
+									altTextDiv.textContent = `Alt: ${img.alt}`;
+									mediaDiv.appendChild(altTextDiv);
+								}
+								contentWrapper.appendChild(mediaDiv);
+							});
+						}
+
+						postElement.appendChild(contentWrapper);
+						postsContainer.appendChild(postElement);
+					}
+				});
+			}
+
+			function displayError(message, isLoginError = false) {
+				const errorContainer = isLoginError ? document.getElementById('loginError') : document.getElementById('error');
+				errorContainer.textContent = message;
+			}
+
+			function clearError(isLoginError = false) {
+				const errorContainer = isLoginError ? document.getElementById('loginError') : document.getElementById('error');
+				errorContainer.textContent = '';
+			}
+
+			async function login() {
+				clearError(true);
+				const identifier = document.getElementById('loginIdentifier').value;
+				const password = document.getElementById('loginPassword').value;
+
+				if (!identifier || !password) {
+					displayError('Please enter your Bluesky handle and app password.', true);
+					return;
+				}
+
+				try {
+					accessToken = await getAccessToken(identifier, password);
+					document.getElementById('loginScreen').classList.add('hidden');
+					document.getElementById('mainScreen').classList.remove('hidden');
+				} catch (error) {
+					displayError(error.message, true);
+				}
+			}
+
+			function logout() {
+				accessToken = null;
+				document.getElementById('mainScreen').classList.add('hidden');
+				document.getElementById('loginScreen').classList.remove('hidden');
+				clearInterval(intervalId);
+			}
+
+			async function updateStream() {
+				clearError();
+				const hashtagsInput = document.getElementById('hashtags').value;
+				const hashtags = hashtagsInput.split(',').map(tag => tag.trim()).filter(tag => tag);
+				const matchAll = document.getElementById('hashtagToggle').checked;
+
+				if (hashtags.length === 0) {
+					displayError('Please enter at least one hashtag.');
+					return;
+				}
+
+				try {
+					const posts = await searchPosts(hashtags, matchAll);
+					displayPosts(posts);
+				} catch (error) {
+					displayError(error.message);
+				}
+			}
+
+			function startStream() {
+				clearInterval(intervalId);
+				const refreshRate = document.getElementById('refreshRate').value;
+				if (refreshRate < 5) {
+					displayError('Refresh rate must be at least 5 seconds.');
+					return;
+				}
+				updateStream();
+				intervalId = setInterval(updateStream, refreshRate * 1000);
+			}
+
+			// Assign functions to window object to make them globally accessible
+			window.login = login;
+			window.logout = logout;
+			window.startStream = startStream;
+		});
+	</script>
+</body>
