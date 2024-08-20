@@ -22,3 +22,4 @@ Requirements (draft):
 18. Display alt text: Show alternative text for images when available.
 19. Responsive design: Ensure the app looks good and functions well on various screen sizes.
 20. Minimum refresh rate: Enforce a minimum refresh rate of 5 seconds to prevent excessive API calls.
+21. Block all adult content and anything with 'nsfw' in the post.
