@@ -1,4 +1,5 @@
-A Bluesky hashtag stream web application, in the manner of the defunct twitterfall
+A Bluesky hashtag stream web application, in the manner of the defunct twitterfall.
+Needs an application password from your bsky account (https://bsky.app/settings/app-passwords)
 
 Requirements (draft):
 1. Dark mode styling: The entire app should have a dark color scheme for better readability and modern aesthetics.
