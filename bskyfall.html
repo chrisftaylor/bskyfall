@@ -323,21 +323,59 @@
 
 				async function searchPosts(hashtags, matchAll) {
 					try {
-						let query;
 						const formattedHashtags = hashtags.flatMap(tag => 
 							tag.split(/\s+/).map(t => t.startsWith('#') ? t : `#${t}`)
 						);
+
+						let posts;
 						if (matchAll) {
-							query = formattedHashtags.join(' ');
+							const query = formattedHashtags.join(' ');
+							console.log('Search query (ALL):', query);
+							const response = await axios.get(`${BLUESKY_API_URL}/app.bsky.feed.searchPosts`, {
+								params: { q: query },
+								headers: { Authorization: `Bearer ${accessToken}` }
+							});
+							posts = response.data.posts;
 						} else {
-							query = `(${formattedHashtags.join(' OR ')})`;
+							console.log('Search queries (ANY):', formattedHashtags);
+							const searchPromises = formattedHashtags.map(tag => 
+								axios.get(`${BLUESKY_API_URL}/app.bsky.feed.searchPosts`, {
+									params: { q: tag },
+									headers: { Authorization: `Bearer ${accessToken}` }
+								})
+							);
+							const responses = await Promise.all(searchPromises);
+							const allPosts = responses.flatMap(response => response.data.posts);
+							
+							posts = Array.from(new Map(allPosts.map(post => [post.uri, post])).values());
 						}
-						console.log('Search query:', query);
-						const response = await axios.get(`${BLUESKY_API_URL}/app.bsky.feed.searchPosts`, {
-							params: { q: query },
-							headers: { Authorization: `Bearer ${accessToken}` }
+
+						// Apply content filtering
+						const filteredPosts = posts.filter(post => {
+							// Check for labels
+							if (post.labels && post.labels.some(label => 
+								['!hide', '!warn', 'porn', 'sexual', 'nudity'].includes(label.val)
+							)) {
+								return false;
+							}
+
+							// Check for 'nsfw' in text or hashtags
+							const postText = post.record.text.toLowerCase();
+							const hashtags = (post.record.facets || [])
+								.filter(facet => facet.features.some(feature => feature.$type === 'app.bsky.richtext.facet#tag'))
+								.map(facet => facet.features.find(feature => feature.$type === 'app.bsky.richtext.facet#tag').tag.toLowerCase());
+
+							if (postText.includes('nsfw') || hashtags.includes('nsfw')) {
+								return false;
+							}
+
+							return true;
 						});
-						return response.data.posts;
+
+						// Sort by date (newest first)
+						filteredPosts.sort((a, b) => new Date(b.indexedAt) - new Date(a.indexedAt));
+
+						return filteredPosts;
 					} catch (error) {
 						console.error('Search posts error:', error);
 						throw new Error(`Failed to fetch posts: ${error.response?.data?.message || error.message}`);
@@ -345,29 +383,45 @@
 				}
 
 				function linkifyText(text, facets) {
+					if (!facets || facets.length === 0) {
+						return document.createTextNode(text);
+					}
+
 					const fragment = document.createDocumentFragment();
 					let lastIndex = 0;
 
-					const sortedFacets = (facets || []).sort((a, b) => a.index.byteStart - b.index.byteStart);
-
-					sortedFacets.forEach(facet => {
-						const feature = facet.features[0];
-						if (feature.$type === 'app.bsky.richtext.facet#link') {
+					facets.forEach(facet => {
+						if (facet.features && facet.features.length > 0) {
+							const feature = facet.features[0];
+							
+							// Add text before the facet
 							if (facet.index.byteStart > lastIndex) {
 								fragment.append(document.createTextNode(text.slice(lastIndex, facet.index.byteStart)));
 							}
 
-							const link = document.createElement('a');
-							link.href = feature.uri;
-							link.textContent = text.slice(facet.index.byteStart, facet.index.byteEnd);
-							link.target = '_blank';
-							link.rel = 'noopener noreferrer';
-							fragment.append(link);
+							const facetText = text.slice(facet.index.byteStart, facet.index.byteEnd);
+
+							if (feature.$type === 'app.bsky.richtext.facet#link') {
+								const link = document.createElement('a');
+								link.href = feature.uri;
+								link.textContent = facetText;
+								link.target = '_blank';
+								link.rel = 'noopener noreferrer';
+								fragment.append(link);
+							} else if (feature.$type === 'app.bsky.richtext.facet#tag') {
+								const tag = document.createElement('span');
+								tag.className = 'hashtag';
+								tag.textContent = facetText;
+								fragment.append(tag);
+							} else {
+								fragment.append(document.createTextNode(facetText));
+							}
 
 							lastIndex = facet.index.byteEnd;
 						}
 					});
 
+					// Add any remaining text after the last facet
 					if (lastIndex < text.length) {
 						fragment.append(document.createTextNode(text.slice(lastIndex)));
 					}
@@ -423,7 +477,16 @@
 
 							const contentDiv = document.createElement('div');
 							contentDiv.className = 'post-content';
-							contentDiv.appendChild(linkifyText(post.record.text, post.record.facets));
+							
+							console.log('Post text:', post.record.text);
+							console.log('Post facets:', JSON.stringify(post.record.facets, null, 2));
+							
+							const linkedContent = linkifyText(post.record.text, post.record.facets);
+							contentDiv.appendChild(linkedContent);
+							
+							// Log the HTML content of the post for debugging
+							console.log('Rendered HTML:', contentDiv.innerHTML);
+							
 							contentWrapper.appendChild(contentDiv);
 
 							if (post.embed && post.embed.images) {
