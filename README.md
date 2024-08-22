@@ -23,3 +23,10 @@ Requirements (draft):
 19. Responsive design: Ensure the app looks good and functions well on various screen sizes.
 20. Minimum refresh rate: Enforce a minimum refresh rate of 5 seconds to prevent excessive API calls.
 21. Block all adult content and anything with 'nsfw' in the post.
+
+----
+
+Known issues:
+1. I wouldn't rely on the content filters
+2. URLs aren't properly rendered -- sometimes misses the first couple of chars
+3. Token expires
